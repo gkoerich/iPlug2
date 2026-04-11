@@ -222,6 +222,11 @@ static bool IsMultiLineEditControl(NSView *cv, id fs)
   SWELLAppMain(SWELLAPP_LOADED,0,0);
 }
 
+- (BOOL)applicationSupportsSecureRestorableState:(NSApplication *)app
+{
+  return YES;
+}
+
 - (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)sender
 {
   return SWELLAppMain(SWELLAPP_SHOULDDESTROY,0,0) > 0 ? NSTerminateLater : NSTerminateNow;
