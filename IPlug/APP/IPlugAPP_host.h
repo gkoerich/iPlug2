@@ -99,6 +99,7 @@ public:
     uint32_t mAudioInChanR;
     uint32_t mAudioOutChanL;
     uint32_t mAudioOutChanR;
+    uint32_t mAmpModelType;
     
     AppState()
     : mAudioInDev(DEFAULT_INPUT_DEV)
@@ -115,6 +116,7 @@ public:
     , mAudioInChanR(2)
     , mAudioOutChanL(1)
     , mAudioOutChanR(2)
+    , mAmpModelType(1)
     {
     }
     
@@ -133,6 +135,7 @@ public:
     , mAudioInChanR(obj.mAudioInChanR)
     , mAudioOutChanL(obj.mAudioInChanL)
     , mAudioOutChanR(obj.mAudioInChanR)
+    , mAmpModelType(obj.mAmpModelType)
     {
     }
     
@@ -150,7 +153,8 @@ public:
               rhs.mAudioInChanL == mAudioInChanL &&
               rhs.mAudioInChanR == mAudioInChanR &&
               rhs.mAudioOutChanL == mAudioOutChanL &&
-              rhs.mAudioOutChanR == mAudioOutChanR
+              rhs.mAudioOutChanR == mAudioOutChanR &&
+              rhs.mAmpModelType == mAmpModelType
 
       );
     }

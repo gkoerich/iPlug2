@@ -9,6 +9,7 @@
 */
 
 #include "IPlugAPP_host.h"
+#include "resource.h"
 
 #ifdef OS_WIN
 #include <sys/stat.h>
@@ -69,6 +70,9 @@ bool IPlugAPPHost::Init()
   mIPlug->OnParamReset(kReset);
   mIPlug->OnActivate(true);
 
+  const int modelCmd = (mState.mAmpModelType == 1) ? ID_AMP_MODEL_MARSHALL1987X : ID_AMP_MODEL_NAM;
+  mIPlug->SendArbitraryMsgFromUI(modelCmd);
+
   return true;
 }
 
@@ -127,6 +131,9 @@ bool IPlugAPPHost::InitState()
 
       mState.mMidiInChan = GetPrivateProfileInt("midi", "inchan", 0, mINIPath.Get()); // 0 is any
       mState.mMidiOutChan = GetPrivateProfileInt("midi", "outchan", 0, mINIPath.Get()); // 1 is first chan
+
+      // general
+      mState.mAmpModelType = GetPrivateProfileInt("general", "amp_model", 1, mINIPath.Get());
     }
 
     // if settings file doesn't exist, populate with default values, otherwise overrwrite
@@ -197,6 +204,9 @@ void IPlugAPPHost::UpdateINI()
   WritePrivateProfileString("midi", "inchan", buf, ini);
   sprintf(buf, "%u", mState.mMidiOutChan);
   WritePrivateProfileString("midi", "outchan", buf, ini);
+
+  sprintf(buf, "%u", mState.mAmpModelType);
+  WritePrivateProfileString("general", "amp_model", buf, ini);
 }
 
 std::string IPlugAPPHost::GetAudioDeviceName(int idx) const
