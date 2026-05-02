@@ -907,6 +907,23 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
   }
 }
 
+- (void) flagsChanged: (NSEvent*) pEvent
+{
+  const NSInteger mod = [pEvent modifierFlags];
+
+  IKeyPress keyPress {"", kVK_NONE, static_cast<bool>(mod & NSShiftKeyMask),
+                                   static_cast<bool>(mod & NSCommandKeyMask),
+                                   static_cast<bool>(mod & NSAlternateKeyMask)};
+
+  const bool handle = keyPress.S ? mGraphics->OnKeyDown(mPrevX, mPrevY, keyPress)
+                                 : mGraphics->OnKeyUp(mPrevX, mPrevY, keyPress);
+
+  if (!handle)
+  {
+    [[self nextResponder] flagsChanged:pEvent];
+  }
+}
+
 - (void) scrollWheel: (NSEvent*) pEvent
 {
   if (mTextFieldView) [self endUserInput ];
