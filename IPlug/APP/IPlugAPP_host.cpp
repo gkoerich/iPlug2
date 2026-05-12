@@ -596,7 +596,8 @@ bool IPlugAPPHost::InitAudio(uint32_t inId, uint32_t outId, uint32_t sr, uint32_
   oParams.nChannels = GetPlug()->MaxNChannels(ERoute::kOutput);
   oParams.firstChannel = mState.mAudioOutChanL > 0 ? mState.mAudioOutChanL - 1 : 0; // 1-indexed in settings.ini -> 0-indexed for RtAudio
 
-  mBufferSize = iovs; // mBufferSize may get changed by stream
+  mBufferSize = iovs > 0 ? iovs : APP_SIGNAL_VECTOR_SIZE; // mBufferSize may get changed by stream
+  mProcessingBlockSize = mBufferSize;
 
   DBGMSG("\ntrying to start audio stream @ %i sr, %i buffer size\nindev = %i:%s\noutdev = %i:%s\ninputs = %i\noutputs = %i\n",
          sr, mBufferSize, inId, GetAudioDeviceName(inId).c_str(), outId, GetAudioDeviceName(outId).c_str(), iParams.nChannels, oParams.nChannels);
@@ -612,7 +613,7 @@ bool IPlugAPPHost::InitAudio(uint32_t inId, uint32_t outId, uint32_t sr, uint32_
   mAudioEnding = false;
   mAudioDone = false;
 
-  mIPlug->SetBlockSize(APP_SIGNAL_VECTOR_SIZE);
+  mIPlug->SetBlockSize(mProcessingBlockSize);
   mIPlug->SetSampleRate(mSampleRate);
   mIPlug->OnReset();
 
@@ -711,33 +712,34 @@ int IPlugAPPHost::AudioCallback(void* pOutputBuffer, void* pInputBuffer, uint32_
     if (doFade)
       ApplyFades(pInputBufferD, nins, nFrames, _this->mAudioEnding);
 
-    for (int i = 0; i < nFrames; i++)
+    uint32_t frameOffset = 0;
+
+    while (frameOffset < nFrames)
     {
-      _this->mBufIndex %= APP_SIGNAL_VECTOR_SIZE;
+      const uint32_t framesThisBlock = std::min<uint32_t>(_this->mProcessingBlockSize, nFrames - frameOffset);
 
-      if (_this->mBufIndex == 0)
+      for (int c = 0; c < nins; c++)
       {
-        for (int c = 0; c < nins; c++)
-        {
-          _this->mInputBufPtrs.Set(c, (pInputBufferD + (c * nFrames)) + i);
-        }
-
-        for (int c = 0; c < nouts; c++)
-        {
-          _this->mOutputBufPtrs.Set(c, (pOutputBufferD + (c * nFrames)) + i);
-        }
-
-        _this->mIPlug->AppProcess(_this->mInputBufPtrs.GetList(), _this->mOutputBufPtrs.GetList(), APP_SIGNAL_VECTOR_SIZE);
-
-        _this->mSamplesElapsed += APP_SIGNAL_VECTOR_SIZE;
+        _this->mInputBufPtrs.Set(c, (pInputBufferD + (c * nFrames)) + frameOffset);
       }
 
       for (int c = 0; c < nouts; c++)
       {
-        pOutputBufferD[c * nFrames + i] *= APP_MULT;
+        _this->mOutputBufPtrs.Set(c, (pOutputBufferD + (c * nFrames)) + frameOffset);
       }
 
-      _this->mBufIndex++;
+      _this->mIPlug->AppProcess(_this->mInputBufPtrs.GetList(), _this->mOutputBufPtrs.GetList(), static_cast<int>(framesThisBlock));
+      _this->mSamplesElapsed += framesThisBlock;
+
+      for (uint32_t i = 0; i < framesThisBlock; i++)
+      {
+        for (int c = 0; c < nouts; c++)
+        {
+          pOutputBufferD[(c * nFrames) + frameOffset + i] *= APP_MULT;
+        }
+      }
+
+      frameOffset += framesThisBlock;
     }
 
     if (doFade)
