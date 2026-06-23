@@ -124,7 +124,15 @@ void ITextEntryControl::Draw(IGraphics& g)
     g.FillRect(mText.mTextEntryFGColor, selectionRect, &blend);
   }
 
-  g.DrawText(mText, StringConvert{}.to_bytes(mEditString).c_str(), mRECT);
+  if (mIsPassword) {
+    std::string bullets;
+    bullets.reserve(mEditString.size() * 3);
+    for (size_t i = 0; i < mEditString.size(); ++i)
+      bullets += "\xe2\x80\xa2";
+    g.DrawText(mText, bullets.c_str(), mRECT);
+  } else {
+    g.DrawText(mText, StringConvert{}.to_bytes(mEditString).c_str(), mRECT);
+  }
   
   if (mDrawCursor && !hasSelection)
   {
@@ -260,7 +268,14 @@ bool ITextEntryControl::OnKeyDown(float x, float y, const IKeyPress& key)
   switch (key.VK)
   {
     case kVK_SPACE: stbKey = ' '; break;
-    case kVK_TAB: return false;
+    case kVK_TAB:
+    {
+      IControl* pFrom = GetUI()->GetControlInTextEntry();
+      auto tabCb = std::move(mOnTabCommit); // save & clear before CommitEdit
+      CommitEdit();
+      if (tabCb) tabCb(pFrom);
+      return true;
+    }
     case kVK_DELETE: stbKey = STB_TEXTEDIT_K_DELETE; break;
     case kVK_BACK: stbKey = STB_TEXTEDIT_K_BACKSPACE; break;
     case kVK_LEFT: stbKey = STB_TEXTEDIT_K_LEFT; break;
@@ -493,9 +508,13 @@ void ITextEntryControl::FillCharWidthCache()
 
   const int len = static_cast<int>(mEditString.size());
   mCharWidths.Resize(len, false);
-  for (int i = 0; i < len; ++i)
-  {
-    mCharWidths.Get()[i] = MeasureCharWidth(mEditString[i], i == 0 ? 0 : mEditString[i - 1]);
+  if (mIsPassword) {
+    static const char16_t bullet = u'•';
+    for (int i = 0; i < len; ++i)
+      mCharWidths.Get()[i] = MeasureCharWidth(bullet, i == 0 ? 0 : bullet);
+  } else {
+    for (int i = 0; i < len; ++i)
+      mCharWidths.Get()[i] = MeasureCharWidth(mEditString[i], i == 0 ? 0 : mEditString[i - 1]);
   }
 }
 
@@ -529,6 +548,8 @@ float ITextEntryControl::MeasureCharWidth(char16_t c, char16_t nc)
 
 void ITextEntryControl::CreateTextEntry(int paramIdx, const IText& text, const IRECT& bounds, int length, const char* str)
 {
+  mIsPassword = false;
+  mOnTabCommit = {};
   SetTargetAndDrawRECTs(bounds);
   SetText(text);
   mText.mFGColor = mText.mTextEntryFGColor;
@@ -540,9 +561,19 @@ void ITextEntryControl::CreateTextEntry(int paramIdx, const IText& text, const I
   mEditing = true;
 }
 
+void ITextEntryControl::SetPasswordMode(bool isPassword)
+{
+  mIsPassword = isPassword;
+  mCharWidths.Resize(0, false);
+  FillCharWidthCache();
+  SetDirty(true);
+}
+
 void ITextEntryControl::DismissEdit()
 {
   mEditing = false;
+  mIsPassword = false;
+  mOnTabCommit = {};
   SetTargetAndDrawRECTs(IRECT());
   GetUI()->ClearInTextEntryControl();
   GetUI()->SetAllControlsDirty();
@@ -551,6 +582,8 @@ void ITextEntryControl::DismissEdit()
 void ITextEntryControl::CommitEdit()
 {
   mEditing = false;
+  mIsPassword = false;
+  mOnTabCommit = {};
   GetUI()->SetControlValueAfterTextEdit(StringConvert{}.to_bytes(mEditString).c_str());
   SetTargetAndDrawRECTs(IRECT());
   GetUI()->SetAllControlsDirty();

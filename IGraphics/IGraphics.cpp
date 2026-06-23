@@ -379,6 +379,18 @@ void IGraphics::RemoveTextEntryControl()
   mTextEntryControl = nullptr;
 }
 
+void IGraphics::SetTextEntryPasswordMode(bool isPassword)
+{
+  if (mTextEntryControl)
+    mTextEntryControl->SetPasswordMode(isPassword);
+}
+
+void IGraphics::SetTextEntryTabCallback(std::function<void(IControl*)> cb)
+{
+  if (mTextEntryControl)
+    mTextEntryControl->SetTabCommitCallback(std::move(cb));
+}
+
 void IGraphics::ShowBubbleControl(IControl* pCaller, float x, float y, const char* str, EDirection dir, IRECT minimumContentBounds)
 {
   assert(mBubbleControls.GetSize() && "No bubble controls attached");
@@ -1031,6 +1043,24 @@ void IGraphics::OnMouseDown(const std::vector<IMouseInfo>& points)
       }
 
       pCapturedControl->OnMouseDown(x, y, mod);
+
+      // If the text entry was just committed by clicking outside its rect,
+      // re-dispatch the click to the actual control under the cursor (e.g. a button).
+      if (singlePoint && mTextEntryControl && pCapturedControl == mTextEntryControl.get()
+          && !mTextEntryControl->EditInProgress())
+      {
+        ReleaseMouseCapture();
+        IControl* pActualControl = GetMouseControl(x, y, true, false, mod.touchID);
+        if (pActualControl && pActualControl != mTextEntryControl.get())
+        {
+          const int nVals = pActualControl->NVals();
+          for (int v = 0; v < nVals; v++) {
+            if (pActualControl->GetParamIdx(v) > kNoParameter)
+              GetDelegate()->BeginInformHostOfParamChangeFromUI(pActualControl->GetParamIdx(v));
+          }
+          pActualControl->OnMouseDown(x, y, mod);
+        }
+      }
     }
   }
 }

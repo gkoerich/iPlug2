@@ -60,6 +60,9 @@ public:
   void DismissEdit();
   void CommitEdit();
 
+  void SetPasswordMode(bool isPassword);
+  void SetTabCommitCallback(std::function<void(IControl*)> cb) { mOnTabCommit = std::move(cb); }
+
   void CreateTextEntry(int paramIdx, const IText& text, const IRECT& bounds, int length, const char* str);
 
 private:
@@ -80,6 +83,7 @@ private:
   
   bool mDrawCursor = false;
   bool mEditing = false;
+  bool mIsPassword = false;
   bool mRecursiveKeyGuard = false;
   bool mCursorIsSet = false;
   bool mCursorSizesValid = false;
@@ -88,6 +92,7 @@ private:
   STB_TexteditState mEditState;
   WDL_TypedBuf<float> mCharWidths;
   std::u16string mEditString;
+  std::function<void(IControl*)> mOnTabCommit;
 };
 
 END_IGRAPHICS_NAMESPACE

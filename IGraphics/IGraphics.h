@@ -1109,6 +1109,12 @@ public:
   
   /** Called when the text entry is dismissed, to reset mInTextEntry */
   void ClearInTextEntryControl() { mInTextEntry = nullptr; }
+
+  /** Enable password masking in the active text entry control */
+  void SetTextEntryPasswordMode(bool isPassword);
+
+  /** Set a callback invoked when the user presses Tab to commit the active text entry */
+  void SetTextEntryTabCallback(std::function<void(IControl*)> cb);
   
   /** @return \c true if tool tips are enabled */
   inline bool TooltipsEnabled() const { return mEnableTooltips; }
