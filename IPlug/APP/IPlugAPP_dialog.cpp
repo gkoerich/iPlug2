@@ -282,10 +282,6 @@ void IPlugAPPHost::PopulatePreferencesDialog(HWND hwndDlg)
   PopulateAudioDialogs(hwndDlg);
   PopulateMidiDialogs(hwndDlg);
 
-  SendDlgItemMessage(hwndDlg, IDC_COMBO_AMP_MODEL, CB_RESETCONTENT, 0, 0);
-  SendDlgItemMessage(hwndDlg, IDC_COMBO_AMP_MODEL, CB_ADDSTRING, 0, (LPARAM)"NAM");
-  SendDlgItemMessage(hwndDlg, IDC_COMBO_AMP_MODEL, CB_ADDSTRING, 0, (LPARAM)"Marshall 1987X");
-  SendDlgItemMessage(hwndDlg, IDC_COMBO_AMP_MODEL, CB_SETCURSEL, (LPARAM) mState.mAmpModelType, 0);
 }
 
 #elif defined OS_MAC
@@ -298,10 +294,6 @@ void IPlugAPPHost::PopulatePreferencesDialog(HWND hwndDlg)
   PopulateAudioDialogs(hwndDlg);
   PopulateMidiDialogs(hwndDlg);
 
-  SendDlgItemMessage(hwndDlg, IDC_COMBO_AMP_MODEL, CB_RESETCONTENT, 0, 0);
-  SendDlgItemMessage(hwndDlg, IDC_COMBO_AMP_MODEL, CB_ADDSTRING, 0, (LPARAM)"NAM");
-  SendDlgItemMessage(hwndDlg, IDC_COMBO_AMP_MODEL, CB_ADDSTRING, 0, (LPARAM)"Marshall 1987X");
-  SendDlgItemMessage(hwndDlg, IDC_COMBO_AMP_MODEL, CB_SETCURSEL, (LPARAM) mState.mAmpModelType, 0);
 }
 #else
   #error NOT IMPLEMENTED
@@ -355,13 +347,6 @@ WDL_DLGRET IPlugAPPHost::PreferencesDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wPar
             _this->TryToChangeAudioDriverType();
             _this->ProbeAudioIO();
             _this->TryToChangeAudio();
-          }
-
-          if (mState.mAmpModelType != mTempState.mAmpModelType)
-          {
-            mState.mAmpModelType = mTempState.mAmpModelType;
-            const int cmd = (mState.mAmpModelType == 1) ? ID_AMP_MODEL_MARSHALL1987X : ID_AMP_MODEL_NAM;
-            _this->GetPlug()->SendArbitraryMsgFromUI(cmd);
           }
 
           break;
@@ -522,15 +507,6 @@ WDL_DLGRET IPlugAPPHost::PreferencesDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wPar
         case IDC_COMBO_MIDI_OUT_CHAN:
           if (HIWORD(wParam) == CBN_SELCHANGE)
             mState.mMidiOutChan = (int) SendDlgItemMessage(hwndDlg, IDC_COMBO_MIDI_OUT_CHAN, CB_GETCURSEL, 0, 0);
-          break;
-
-        case IDC_COMBO_AMP_MODEL:
-          if (HIWORD(wParam) == CBN_SELCHANGE)
-          {
-            mState.mAmpModelType = (uint32_t) SendDlgItemMessage(hwndDlg, IDC_COMBO_AMP_MODEL, CB_GETCURSEL, 0, 0);
-            const int cmd = (mState.mAmpModelType == 1) ? ID_AMP_MODEL_MARSHALL1987X : ID_AMP_MODEL_NAM;
-            _this->GetPlug()->SendArbitraryMsgFromUI(cmd);
-          }
           break;
 
         default:

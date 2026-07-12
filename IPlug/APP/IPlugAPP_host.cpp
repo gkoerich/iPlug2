@@ -70,9 +70,6 @@ bool IPlugAPPHost::Init()
   mIPlug->OnParamReset(kReset);
   mIPlug->OnActivate(true);
 
-  const int modelCmd = (mState.mAmpModelType == 1) ? ID_AMP_MODEL_MARSHALL1987X : ID_AMP_MODEL_NAM;
-  mIPlug->SendArbitraryMsgFromUI(modelCmd);
-
   return true;
 }
 
