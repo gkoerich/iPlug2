@@ -83,14 +83,20 @@ void IPlugAPPHost::CloseWindow()
   mIPlug->CloseWindow();
 }
 
+// Settings folder name (settings.ini) — must be defined per app target
+// (e.g. a display name with spaces, shared with other app data).
+#ifndef APP_SETTINGS_DIR_NAME
+  #error "APP_SETTINGS_DIR_NAME must be defined (settings.ini folder name)"
+#endif
+
 bool IPlugAPPHost::InitState()
 {
 #if defined OS_WIN
   TCHAR strPath[MAX_PATH_LEN];
   SHGetFolderPathA( NULL, CSIDL_LOCAL_APPDATA, NULL, 0, strPath );
-  mINIPath.SetFormatted(MAX_PATH_LEN, "%s\\%s\\", strPath, BUNDLE_NAME);
+  mINIPath.SetFormatted(MAX_PATH_LEN, "%s\\%s\\", strPath, APP_SETTINGS_DIR_NAME);
 #elif defined OS_MAC
-  mINIPath.SetFormatted(MAX_PATH_LEN, "%s/Library/Application Support/%s/", getenv("HOME"), BUNDLE_NAME);
+  mINIPath.SetFormatted(MAX_PATH_LEN, "%s/Library/Application Support/%s/", getenv("HOME"), APP_SETTINGS_DIR_NAME);
 #else
   #error NOT IMPLEMENTED
 #endif
