@@ -33,6 +33,50 @@ using StringConvert = std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, ch
 using namespace iplug;
 using namespace igraphics;
 
+namespace
+{
+bool IsHighSurrogate(char16_t c) { return c >= 0xD800 && c <= 0xDBFF; }
+bool IsLowSurrogate (char16_t c) { return c >= 0xDC00 && c <= 0xDFFF; }
+
+// A low surrogate preceded by a high surrogate is the second unit of a pair and
+// does not start a new code point. An orphaned low surrogate is malformed UTF-16
+// but still represents one code point visually, so it counts as one.
+int CountCodePointsU16(const std::u16string& s)
+{
+  int count = 0;
+  for (size_t i = 0; i < s.size(); ++i)
+  {
+    if (IsLowSurrogate(s[i]) && i > 0 && IsHighSurrogate(s[i - 1]))
+      continue;  // second unit of a surrogate pair — already counted
+    ++count;
+  }
+  return count;
+}
+
+// Returns the largest prefix length (in char16_t units) of [text, text+num)
+// that contains at most maxCodePoints code points, without splitting a valid
+// surrogate pair. Orphaned low surrogates each count as one code point.
+size_t ClampToCodePointsU16(const char16_t* text, size_t num, int maxCodePoints)
+{
+  size_t unitsKept = 0;
+  int codePoints = 0;
+  while (unitsKept < num && codePoints < maxCodePoints)
+  {
+    const bool isPairSecond = IsLowSurrogate(text[unitsKept])
+                              && unitsKept > 0
+                              && IsHighSurrogate(text[unitsKept - 1]);
+    if (!isPairSecond)
+      ++codePoints;
+    ++unitsKept;
+  }
+  // Do not end the prefix right after a high surrogate without its low surrogate.
+  if (unitsKept < num && unitsKept > 0 && IsHighSurrogate(text[unitsKept - 1])
+      && IsLowSurrogate(text[unitsKept]))
+    ++unitsKept;
+  return unitsKept;
+}
+} // namespace
+
 #define VIRTUAL_KEY_BIT 0x80000000
 #define STB_TEXTEDIT_K_SHIFT 0x40000000
 #define STB_TEXTEDIT_K_CONTROL 0x20000000
@@ -372,6 +416,20 @@ void ITextEntryControl::Paste()
   {
     CallSTB([&] {
       auto uText = StringConvert{}.from_bytes (fromClipboard.Get(), fromClipboard.Get() + fromClipboard.GetLength());
+      // Clamp before stb_textedit_paste so it receives the true insertion length
+      // and advances the cursor correctly — stb assumes all-or-nothing semantics.
+      // Subtract selected code points: stb deletes the selection before inserting,
+      // so they free up room. select_* can exceed string length before stb_clamp.
+      if (mMaxCodePoints > 0)
+      {
+        const int len = static_cast<int>(mEditString.size());
+        const int a = std::clamp(std::min(mEditState.select_start, mEditState.select_end), 0, len);
+        const int b = std::clamp(std::max(mEditState.select_start, mEditState.select_end), 0, len);
+        const int selCPs = CountCodePointsU16(mEditString.substr(a, b - a));
+        const int room = mMaxCodePoints - (CountCodePointsU16(mEditString) - selCPs);
+        if (room <= 0) return;
+        uText.resize(ClampToCodePointsU16(uText.data(), uText.size(), room));
+      }
       stb_textedit_paste (this, &mEditState, uText.data(), (int) uText.size());
     });
   }
@@ -405,6 +463,16 @@ int ITextEntryControl::DeleteChars(ITextEntryControl* _this, size_t pos, size_t 
 //static
 int ITextEntryControl::InsertChars(ITextEntryControl* _this, size_t pos, const char16_t* text, size_t num)
 {
+  if (_this->mMaxCodePoints > 0)
+  {
+    const int room = _this->mMaxCodePoints - CountCodePointsU16(_this->mEditString);
+    if (room <= 0)
+      return false;
+    num = ClampToCodePointsU16(text, num, room);
+    if (num == 0)
+      return false;
+  }
+
   _this->mEditString.insert(pos, text, num);
   _this->SetStr(StringConvert{}.to_bytes(_this->mEditString).c_str());
   _this->OnTextChange();
@@ -550,6 +618,7 @@ void ITextEntryControl::CreateTextEntry(int paramIdx, const IText& text, const I
 {
   mIsPassword = false;
   mOnTabCommit = {};
+  mMaxCodePoints = 0;
   SetTargetAndDrawRECTs(bounds);
   SetText(text);
   mText.mFGColor = mText.mTextEntryFGColor;

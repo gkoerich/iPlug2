@@ -50,6 +50,9 @@ public:
   void OnEndAnimation() override;
   
   static int DeleteChars(ITextEntryControl* _this, size_t pos, size_t num);
+
+  // Sole entry point for text into the buffer: stb_textedit routes both typed
+  // input (STB_TEXTEDIT_INSERTCHARS) and paste (stb_textedit_paste) through here.
   static int InsertChars(ITextEntryControl* _this, size_t pos, const char16_t* text, size_t num);
   static void Layout(StbTexteditRow* row, ITextEntryControl* _this, int start_i);
   static float GetCharWidth(ITextEntryControl* _this, int n, int i);
@@ -62,6 +65,7 @@ public:
 
   void SetPasswordMode(bool isPassword);
   void SetTabCommitCallback(std::function<void(IControl*)> cb) { mOnTabCommit = std::move(cb); }
+  void SetMaxCodePoints(int max) { mMaxCodePoints = max; }
 
   void CreateTextEntry(int paramIdx, const IText& text, const IRECT& bounds, int length, const char* str);
 
@@ -84,6 +88,7 @@ private:
   bool mDrawCursor = false;
   bool mEditing = false;
   bool mIsPassword = false;
+  int mMaxCodePoints = 0; // 0 = unlimited; reset on every CreateTextEntry
   bool mRecursiveKeyGuard = false;
   bool mCursorIsSet = false;
   bool mCursorSizesValid = false;

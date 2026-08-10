@@ -391,6 +391,12 @@ void IGraphics::SetTextEntryTabCallback(std::function<void(IControl*)> cb)
     mTextEntryControl->SetTabCommitCallback(std::move(cb));
 }
 
+void IGraphics::SetTextEntryMaxCodePoints(int max)
+{
+  if (mTextEntryControl)
+    mTextEntryControl->SetMaxCodePoints(max);
+}
+
 void IGraphics::ShowBubbleControl(IControl* pCaller, float x, float y, const char* str, EDirection dir, IRECT minimumContentBounds)
 {
   assert(mBubbleControls.GetSize() && "No bubble controls attached");

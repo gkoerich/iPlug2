@@ -1115,7 +1115,11 @@ public:
 
   /** Set a callback invoked when the user presses Tab to commit the active text entry */
   void SetTextEntryTabCallback(std::function<void(IControl*)> cb);
-  
+
+  /** Limit the active text entry to at most `max` Unicode code points (0 = unlimited).
+   * Reset to unlimited every time CreateTextEntry() opens a new edit. */
+  void SetTextEntryMaxCodePoints(int max);
+
   /** @return \c true if tool tips are enabled */
   inline bool TooltipsEnabled() const { return mEnableTooltips; }
   
