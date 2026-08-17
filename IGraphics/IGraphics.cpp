@@ -397,6 +397,32 @@ void IGraphics::SetTextEntryMaxCodePoints(int max)
     mTextEntryControl->SetMaxCodePoints(max);
 }
 
+void IGraphics::SetTextEntryChangeCallback(std::function<void(const char*)> cb)
+{
+  if (mTextEntryControl)
+    mTextEntryControl->SetChangeCallback(std::move(cb));
+}
+
+void IGraphics::SetTextEntryWordWrap(bool wrap, float lineHeight)
+{
+  if (mTextEntryControl)
+    mTextEntryControl->SetWordWrap(wrap, lineHeight);
+}
+
+bool IGraphics::IsInGraphicsTextEntry() const
+{
+  return mTextEntryControl && mTextEntryControl->EditInProgress();
+}
+
+bool IGraphics::OnTextInput(const char* str)
+{
+  if (!IsInGraphicsTextEntry())
+    return false;
+
+  mTextEntryControl->InsertUTF8(str);
+  return true;
+}
+
 void IGraphics::ShowBubbleControl(IControl* pCaller, float x, float y, const char* str, EDirection dir, IRECT minimumContentBounds)
 {
   assert(mBubbleControls.GetSize() && "No bubble controls attached");

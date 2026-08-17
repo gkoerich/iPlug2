@@ -59,19 +59,37 @@ public:
   static char16_t GetChar(ITextEntryControl* _this, int pos);
   static int GetLength(ITextEntryControl* _this);
 
-  bool EditInProgress() { return mEditing; }
+  bool EditInProgress() const { return mEditing; }
   void DismissEdit();
   void CommitEdit();
+
+  /** Insert a UTF-8 string at the caret, replacing the selection. Used for text produced by the
+   * platform's input method — dead-key composition, IME and Option/AltGr combinations never reach
+   * a key-down handler as a plain character. Obeys SetMaxCodePoints(). */
+  void InsertUTF8(const char* str);
 
   void SetPasswordMode(bool isPassword);
   void SetTabCommitCallback(std::function<void(IControl*)> cb) { mOnTabCommit = std::move(cb); }
   void SetMaxCodePoints(int max) { mMaxCodePoints = max; }
 
+  // Reports the buffer on every change while editing, so a caller can react per keystroke instead
+  // of waiting for the commit. Also fires once on a dismissed (cancelled) edit, with the string
+  // the entry started from, so the last live value never outlives the edit that produced it.
+  void SetChangeCallback(std::function<void(const char*)> cb) { mOnChange = std::move(cb); }
+
+  /** Wrap the edited text over multiple rows at the control's width, instead of the single row
+   * this control is otherwise limited to. Opt-in per edit session and reset on every
+   * CreateTextEntry(), so single-line fields keep the original layout and drawing path.
+   * @param wrap Whether to word-wrap
+   * @param lineHeight Distance between row tops, in pixels */
+  void SetWordWrap(bool wrap, float lineHeight) { mWordWrap = wrap; mLineHeight = lineHeight; }
+
   void CreateTextEntry(int paramIdx, const IText& text, const IRECT& bounds, int length, const char* str);
 
 private:
-    
+
   void SetStr(const char* str);
+  void DrawWrapped(IGraphics& g);
 
   template<typename Proc>
   bool CallSTB(Proc proc);
@@ -89,6 +107,8 @@ private:
   bool mEditing = false;
   bool mIsPassword = false;
   int mMaxCodePoints = 0; // 0 = unlimited; reset on every CreateTextEntry
+  bool mWordWrap = false; // reset on every CreateTextEntry
+  float mLineHeight = 0.f;
   bool mRecursiveKeyGuard = false;
   bool mCursorIsSet = false;
   bool mCursorSizesValid = false;
@@ -97,7 +117,9 @@ private:
   STB_TexteditState mEditState;
   WDL_TypedBuf<float> mCharWidths;
   std::u16string mEditString;
+  std::string mInitialStr; // buffer at CreateTextEntry, replayed to mOnChange on a dismissed edit
   std::function<void(IControl*)> mOnTabCommit;
+  std::function<void(const char*)> mOnChange;
 };
 
 END_IGRAPHICS_NAMESPACE

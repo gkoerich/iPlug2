@@ -113,7 +113,7 @@ using namespace igraphics;
 #define VIEW_BASE NSView
 #endif
 
-@interface IGRAPHICS_VIEW : VIEW_BASE <NSTextFieldDelegate/*, WKScriptMessageHandler*/>
+@interface IGRAPHICS_VIEW : VIEW_BASE <NSTextFieldDelegate, NSTextInputClient/*, WKScriptMessageHandler*/>
 {
   CVDisplayLinkRef mDisplayLink;
   dispatch_source_t mDisplaySource;
@@ -126,6 +126,9 @@ using namespace igraphics;
   bool mMouseOutDuringDrag;
   IRECTList mDirtyRects;
   IColorPickerHandlerFunc mColorPickerFunc;
+  NSMutableAttributedString* mMarkedText; // composição em andamento (tecla morta / IME)
+  NSEvent* mLastKeyEvent;                 // válido só durante keyDown:, não retido
+  BOOL mKeyEventHandled;                  // o input method consumiu o keyDown: corrente
 @public
   IGraphicsMac* mGraphics; // OBJC instance variables have to be pointers
 }
@@ -157,6 +160,20 @@ using namespace igraphics;
 - (void) scrollWheel: (NSEvent*) pEvent;
 - (void) keyDown: (NSEvent*) pEvent;
 - (void) keyUp: (NSEvent*) pEvent;
+//NSTextInputClient — só entra em ação com o editor do IGraphics ativo; é o caminho por onde
+//teclas mortas, IME e combinações com Option chegam já compostas.
+- (BOOL) sendKeyPress: (NSEvent*) pEvent isUp: (BOOL) isUp;
+- (void) insertText: (id) string replacementRange: (NSRange) replacementRange;
+- (void) doCommandBySelector: (SEL) selector;
+- (void) setMarkedText: (id) string selectedRange: (NSRange) selectedRange replacementRange: (NSRange) replacementRange;
+- (void) unmarkText;
+- (BOOL) hasMarkedText;
+- (NSRange) markedRange;
+- (NSRange) selectedRange;
+- (NSAttributedString*) attributedSubstringForProposedRange: (NSRange) range actualRange: (NSRangePointer) actualRange;
+- (NSArray<NSAttributedStringKey>*) validAttributesForMarkedText;
+- (NSRect) firstRectForCharacterRange: (NSRange) range actualRange: (NSRangePointer) actualRange;
+- (NSUInteger) characterIndexForPoint: (NSPoint) point;
 //text entry
 - (void) removeFromSuperview;
 - (void) controlTextDidEndEditing: (NSNotification*) pNotification;

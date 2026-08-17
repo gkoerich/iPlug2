@@ -142,9 +142,86 @@ ITextEntryControl::ITextEntryControl()
   });
 }
 
+void ITextEntryControl::DrawWrapped(IGraphics& g)
+{
+  FillCharWidthCache();
+
+  const int len = GetLength(this);
+  const int selStart = std::min(mEditState.select_start, mEditState.select_end);
+  const int selEnd = std::max(mEditState.select_start, mEditState.select_end);
+  const bool hasSelection = selStart != selEnd;
+
+  // Each row is drawn centred in its own line box; the block itself starts at the top of the rect,
+  // which is the origin Layout() reports to stb.
+  IText rowText = mText;
+  rowText.mAlign = EAlign::Near;
+  rowText.mVAlign = EVAlign::Middle;
+
+  float y = mRECT.T;
+  int i = 0;
+
+  do
+  {
+    StbTexteditRow row;
+    Layout(&row, this, i);
+    const int count = std::max(row.num_chars, 0);
+    const IRECT rowRect(mRECT.L, y, mRECT.R, y + mLineHeight);
+
+    if (hasSelection && selEnd > i && selStart < i + count)
+    {
+      const int from = std::max(selStart, i);
+      const int to = std::min(selEnd, i + count);
+
+      float x0 = mRECT.L;
+      for (int k = i; k < from; ++k)
+        x0 += mCharWidths.Get()[k];
+
+      float x1 = x0;
+      for (int k = from; k < to; ++k)
+        x1 += mCharWidths.Get()[k];
+
+      IRECT selectionRect = IRECT(x0, y, x1, y + mLineHeight).GetVPadded(-mText.mSize * 0.1f);
+      IBlend blend(EBlend::Default, 0.2f);
+      g.FillRect(mText.mTextEntryFGColor, selectionRect, &blend);
+    }
+
+    if (count > 0)
+    {
+      const std::u16string line = mEditString.substr(static_cast<size_t>(i), static_cast<size_t>(count));
+      g.DrawText(rowText, StringConvert{}.to_bytes(line).c_str(), rowRect);
+    }
+
+    // The caret sits on this row when it falls inside it, or when this is the last row and the
+    // caret is at the very end of the text.
+    const bool caretHere = mEditState.cursor >= i &&
+                           (mEditState.cursor < i + count || i + count >= len);
+
+    if (mDrawCursor && !hasSelection && caretHere)
+    {
+      float cursorPos = mRECT.L;
+      for (int k = i; k < mEditState.cursor && k < i + count; ++k)
+        cursorPos += mCharWidths.Get()[k];
+
+      IRECT cursorRect =
+        IRECT(roundf(cursorPos - 1), y, roundf(cursorPos), y + mLineHeight).GetVPadded(-mText.mSize * 0.1f);
+      g.FillRect(mText.mTextEntryFGColor, cursorRect);
+    }
+
+    y += mLineHeight;
+    i += count;
+  }
+  while (i < len);
+}
+
 void ITextEntryControl::Draw(IGraphics& g)
 {
   g.FillRect(mText.mTextEntryBGColor, mRECT);
+
+  if (mWordWrap)
+  {
+    DrawWrapped(g);
+    return;
+  }
 
   StbTexteditRow row;
   Layout(&row, this, 0);
@@ -409,30 +486,39 @@ void ITextEntryControl::CopySelection()
   }
 }
 
+// Sole insertion path for whole strings: typed text arriving from the platform's input method
+// (dead keys, IME, Option combos) and clipboard pastes share it, so mMaxCodePoints is enforced
+// once for both.
+void ITextEntryControl::InsertUTF8(const char* str)
+{
+  if (!mEditing || str == nullptr || *str == '\0')
+    return;
+
+  CallSTB([&] {
+    auto uText = StringConvert{}.from_bytes (str, str + strlen(str));
+    // Clamp before stb_textedit_paste so it receives the true insertion length
+    // and advances the cursor correctly — stb assumes all-or-nothing semantics.
+    // Subtract selected code points: stb deletes the selection before inserting,
+    // so they free up room. select_* can exceed string length before stb_clamp.
+    if (mMaxCodePoints > 0)
+    {
+      const int len = static_cast<int>(mEditString.size());
+      const int a = std::clamp(std::min(mEditState.select_start, mEditState.select_end), 0, len);
+      const int b = std::clamp(std::max(mEditState.select_start, mEditState.select_end), 0, len);
+      const int selCPs = CountCodePointsU16(mEditString.substr(a, b - a));
+      const int room = mMaxCodePoints - (CountCodePointsU16(mEditString) - selCPs);
+      if (room <= 0) return;
+      uText.resize(ClampToCodePointsU16(uText.data(), uText.size(), room));
+    }
+    stb_textedit_paste (this, &mEditState, uText.data(), (int) uText.size());
+  });
+}
+
 void ITextEntryControl::Paste()
 {
   WDL_String fromClipboard;
   if (GetUI()->GetTextFromClipboard(fromClipboard))
-  {
-    CallSTB([&] {
-      auto uText = StringConvert{}.from_bytes (fromClipboard.Get(), fromClipboard.Get() + fromClipboard.GetLength());
-      // Clamp before stb_textedit_paste so it receives the true insertion length
-      // and advances the cursor correctly — stb assumes all-or-nothing semantics.
-      // Subtract selected code points: stb deletes the selection before inserting,
-      // so they free up room. select_* can exceed string length before stb_clamp.
-      if (mMaxCodePoints > 0)
-      {
-        const int len = static_cast<int>(mEditString.size());
-        const int a = std::clamp(std::min(mEditState.select_start, mEditState.select_end), 0, len);
-        const int b = std::clamp(std::max(mEditState.select_start, mEditState.select_end), 0, len);
-        const int selCPs = CountCodePointsU16(mEditString.substr(a, b - a));
-        const int room = mMaxCodePoints - (CountCodePointsU16(mEditString) - selCPs);
-        if (room <= 0) return;
-        uText.resize(ClampToCodePointsU16(uText.data(), uText.size(), room));
-      }
-      stb_textedit_paste (this, &mEditState, uText.data(), (int) uText.size());
-    });
-  }
+    InsertUTF8(fromClipboard.Get());
 }
 
 void ITextEntryControl::Cut()
@@ -494,16 +580,66 @@ int ITextEntryControl::GetLength(ITextEntryControl* _this)
 //static
 void ITextEntryControl::Layout(StbTexteditRow* row, ITextEntryControl* _this, int start_i)
 {
+  _this->FillCharWidthCache();
+
+  // Word-wrapped: greedily fill the row that starts at start_i, breaking after the last space that
+  // still fits. stb walks rows by repeatedly calling this with the next start index, so ymin/ymax
+  // must be in the same space as the coordinates handed to stb_textedit_click — absolute, since
+  // x0 below is absolute too. Row k then spans [k*lineHeight + T, k*lineHeight + T + lineHeight].
+  if (_this->mWordWrap)
+  {
+    const int len = GetLength(_this);
+    const float maxWidth = _this->GetRECT().W();
+
+    float textWidth = 0.f;
+    int count = 0;
+    int breakCount = 0;      // chars up to and including the last space that fits
+    float breakWidth = 0.f;
+
+    for (int i = start_i; i < len; ++i)
+    {
+      const float w = _this->mCharWidths.Get()[i];
+
+      // The first char of a row is always taken, so num_chars can never be 0 while start_i < len
+      // — a zero-length row would spin stb_textedit_find_charpos forever.
+      if (count > 0 && textWidth + w > maxWidth)
+      {
+        if (breakCount > 0)
+        {
+          count = breakCount;
+          textWidth = breakWidth;
+        }
+        break;
+      }
+
+      textWidth += w;
+      ++count;
+
+      if (_this->mEditString[static_cast<size_t>(i)] == u' ')
+      {
+        breakCount = count;
+        breakWidth = textWidth;
+      }
+    }
+
+    row->num_chars = count;
+    row->baseline_y_delta = _this->mLineHeight;
+    row->x0 = _this->GetRECT().L; // wrapped rows are left-aligned, matching DrawWrapped()
+    row->x1 = row->x0 + textWidth;
+    row->ymin = _this->GetRECT().T;
+    row->ymax = row->ymin + _this->mLineHeight;
+    return;
+  }
+
   assert (start_i == 0);
 
-  _this->FillCharWidthCache();
   float textWidth = 0.;
-  
+
   for (int i = 0; i < _this->mCharWidths.GetSize(); i++)
   {
     textWidth += _this->mCharWidths.Get()[i];
   }
-  
+
   row->num_chars = GetLength(_this);
   row->baseline_y_delta = 1.25;
 
@@ -566,6 +702,9 @@ void ITextEntryControl::OnTextChange()
 {
   mCharWidths.Resize(0, false);
   FillCharWidthCache();
+
+  if (mOnChange)
+    mOnChange(StringConvert{}.to_bytes(mEditString).c_str());
 }
 
 void ITextEntryControl::FillCharWidthCache()
@@ -618,7 +757,11 @@ void ITextEntryControl::CreateTextEntry(int paramIdx, const IText& text, const I
 {
   mIsPassword = false;
   mOnTabCommit = {};
+  mOnChange = {}; // set after this returns, so the SetStr below never fires it
   mMaxCodePoints = 0;
+  mWordWrap = false;
+  mLineHeight = 0.f;
+  mInitialStr = str ? str : "";
   SetTargetAndDrawRECTs(bounds);
   SetText(text);
   mText.mFGColor = mText.mTextEntryFGColor;
@@ -643,9 +786,14 @@ void ITextEntryControl::DismissEdit()
   mEditing = false;
   mIsPassword = false;
   mOnTabCommit = {};
+  auto changeCb = std::move(mOnChange); // save & clear: the callback may start another edit
+  mOnChange = {};
   SetTargetAndDrawRECTs(IRECT());
   GetUI()->ClearInTextEntryControl();
   GetUI()->SetAllControlsDirty();
+
+  if (changeCb)
+    changeCb(mInitialStr.c_str());
 }
 
 void ITextEntryControl::CommitEdit()
@@ -653,6 +801,7 @@ void ITextEntryControl::CommitEdit()
   mEditing = false;
   mIsPassword = false;
   mOnTabCommit = {};
+  mOnChange = {}; // OnTextEntryCompletion carries the committed value to the owner
   GetUI()->SetControlValueAfterTextEdit(StringConvert{}.to_bytes(mEditString).c_str());
   SetTargetAndDrawRECTs(IRECT());
   GetUI()->SetAllControlsDirty();

@@ -1110,6 +1110,16 @@ public:
   /** Called when the text entry is dismissed, to reset mInTextEntry */
   void ClearInTextEntryControl() { mInTextEntry = nullptr; }
 
+  /** @return True while the IGraphics-drawn text entry is editing (not the platform's own widget).
+   * Platform key handling uses this to decide whether to route the event through the OS input
+   * method instead of the raw key-down path. */
+  bool IsInGraphicsTextEntry() const;
+
+  /** Feed text produced by the platform's input method to the active IGraphics text entry.
+   * @param str UTF-8 text, already composed (dead keys, IME, Option/AltGr)
+   * @return True if a text entry consumed it */
+  bool OnTextInput(const char* str);
+
   /** Enable password masking in the active text entry control */
   void SetTextEntryPasswordMode(bool isPassword);
 
@@ -1119,6 +1129,16 @@ public:
   /** Limit the active text entry to at most `max` Unicode code points (0 = unlimited).
    * Reset to unlimited every time CreateTextEntry() opens a new edit. */
   void SetTextEntryMaxCodePoints(int max);
+
+  /** Set a callback invoked with the active text entry's contents on every change while editing,
+   * and once with the pre-edit contents if the edit is dismissed. Cleared on every CreateTextEntry(). */
+  void SetTextEntryChangeCallback(std::function<void(const char*)> cb);
+
+  /** Word-wrap the active text entry over multiple rows at its own width.
+   * Reset to off on every CreateTextEntry().
+   * @param wrap Whether to word-wrap
+   * @param lineHeight Distance between row tops, in pixels */
+  void SetTextEntryWordWrap(bool wrap, float lineHeight);
 
   /** @return \c true if tool tips are enabled */
   inline bool TooltipsEnabled() const { return mEnableTooltips; }

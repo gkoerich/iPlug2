@@ -390,8 +390,11 @@ extern StaticStorage<CoreTextFontDescriptor> sFontDescriptorCache;
   mGraphics = pGraphics;
   NSRect r = NSMakeRect(0.f, 0.f, (float) pGraphics->WindowWidth(), (float) pGraphics->WindowHeight());
   self = [super initWithFrame:r];
-  
+
   mMouseOutDuringDrag = false;
+  mMarkedText = nil;
+  mLastKeyEvent = nil;
+  mKeyEventHandled = NO;
 
   self.wantsLayer = YES;
   self.layer.opaque = YES;
@@ -525,6 +528,7 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     [[NSColorPanel sharedColorPanel] close];
   
   mColorPickerFunc = nullptr;
+  [mMarkedText release];
   [mMoveCursor release];
   [mTrackingArea release];
   [[NSNotificationCenter defaultCenter] removeObserver:self];
@@ -845,32 +849,50 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     mGraphics->OnMouseOver(info.x, info.y, info.ms);
 }
 
-- (void) keyDown: (NSEvent*) pEvent
+- (BOOL) sendKeyPress: (NSEvent*) pEvent isUp: (BOOL) isUp
 {
   int flag = 0;
   int code = MacKeyEventToVK(pEvent, flag);
   NSString *s = [pEvent charactersIgnoringModifiers];
 
   unichar c = 0;
-  
+
   if ([s length] == 1)
     c = [s characterAtIndex:0];
-  
+
   if(!static_cast<bool>(flag & kFVIRTKEY))
   {
     code = kVK_NONE;
   }
-  
+
   char utf8[5];
   WDL_MakeUTFChar(utf8, c, 4);
-  
+
   IKeyPress keyPress {utf8, code, static_cast<bool>(flag & kFSHIFT),
                                   static_cast<bool>(flag & kFCONTROL),
                                   static_cast<bool>(flag & kFALT)};
-  
-  bool handle = mGraphics->OnKeyDown(mPrevX, mPrevY, keyPress);
-  
-  if (!handle)
+
+  return isUp ? mGraphics->OnKeyUp(mPrevX, mPrevY, keyPress)
+              : mGraphics->OnKeyDown(mPrevX, mPrevY, keyPress);
+}
+
+- (void) keyDown: (NSEvent*) pEvent
+{
+  // Com o editor do IGraphics ativo o evento vai para o input method: é ele que compõe tecla
+  // morta, IME e Option, devolvendo o texto por insertText: e as teclas de edição por
+  // doCommandBySelector:. charactersIgnoringModifiers nunca veria um "á" formado.
+  if (mGraphics->IsInGraphicsTextEntry())
+  {
+    mLastKeyEvent = pEvent;
+    mKeyEventHandled = NO;
+    [self interpretKeyEvents: @[pEvent]];
+    mLastKeyEvent = nil;
+
+    if (mKeyEventHandled)
+      return;
+  }
+
+  if (![self sendKeyPress: pEvent isUp: NO])
   {
     [[self nextResponder] keyDown:pEvent];
   }
@@ -878,33 +900,94 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
 
 - (void) keyUp: (NSEvent*) pEvent
 {
-  int flag = 0;
-  int code = MacKeyEventToVK(pEvent, flag);
-  NSString *s = [pEvent charactersIgnoringModifiers];
-  
-  unichar c = 0;
-  
-  if ([s length] == 1)
-    c = [s characterAtIndex:0];
-  
-  if(!static_cast<bool>(flag & kFVIRTKEY))
-  {
-    code = kVK_NONE;
-  }
-  
-  char utf8[5];
-  WDL_MakeUTFChar(utf8, c, 4);
-  
-  IKeyPress keyPress {utf8, code, static_cast<bool>(flag & kFSHIFT),
-                                  static_cast<bool>(flag & kFCONTROL),
-                                  static_cast<bool>(flag & kFALT)};
-  
-  bool handle = mGraphics->OnKeyUp(mPrevX, mPrevY, keyPress);
-  
-  if (!handle)
+  if (![self sendKeyPress: pEvent isUp: YES])
   {
     [[self nextResponder] keyUp:pEvent];
   }
+}
+
+#pragma mark - NSTextInputClient
+
+- (void) insertText: (id) string replacementRange: (NSRange) replacementRange
+{
+  NSString* text = [string isKindOfClass: [NSAttributedString class]] ? [string string] : string;
+  [self unmarkText];
+
+  if ([text length] == 0)
+    return;
+
+  mGraphics->OnTextInput([text UTF8String]);
+  mKeyEventHandled = YES;
+}
+
+- (void) doCommandBySelector: (SEL) selector
+{
+  // O input method classificou a tecla como comando de edição (setas, backspace, enter, tab,
+  // esc…). Em vez de traduzir cada seletor, o evento original volta ao caminho normal, que já
+  // mapeia todos eles — inclusive as variantes com Shift, que fazem a seleção.
+  if (mLastKeyEvent == nil)
+    return;
+
+  [self sendKeyPress: mLastKeyEvent isUp: NO];
+
+  // Marcado como tratado mesmo quando o controle ignora a tecla: o evento já foi entregue uma
+  // vez, e reenviá-lo pelo caminho cru duplicaria a ação.
+  mKeyEventHandled = YES;
+}
+
+- (void) setMarkedText: (id) string selectedRange: (NSRange) selectedRange replacementRange: (NSRange) replacementRange
+{
+  NSString* text = [string isKindOfClass: [NSAttributedString class]] ? [string string] : string;
+
+  [mMarkedText release];
+  mMarkedText = [text length] > 0 ? [[NSMutableAttributedString alloc] initWithString: text] : nil;
+
+  // A composição em andamento (o acento sozinho, ainda sem a vogal) consome a tecla: sem isto o
+  // caminho cru inseriria o caractere da tecla morta.
+  mKeyEventHandled = YES;
+}
+
+- (void) unmarkText
+{
+  [mMarkedText release];
+  mMarkedText = nil;
+}
+
+- (BOOL) hasMarkedText
+{
+  return mMarkedText != nil;
+}
+
+- (NSRange) markedRange
+{
+  return mMarkedText != nil ? NSMakeRange(0, [mMarkedText length]) : NSMakeRange(NSNotFound, 0);
+}
+
+- (NSRange) selectedRange
+{
+  // O editor do IGraphics não expõe o intervalo selecionado; o input method só precisa de um
+  // valor válido para posicionar a janela de candidatos.
+  return NSMakeRange(0, 0);
+}
+
+- (NSAttributedString*) attributedSubstringForProposedRange: (NSRange) range actualRange: (NSRangePointer) actualRange
+{
+  return nil;
+}
+
+- (NSArray<NSAttributedStringKey>*) validAttributesForMarkedText
+{
+  return @[];
+}
+
+- (NSRect) firstRectForCharacterRange: (NSRange) range actualRange: (NSRangePointer) actualRange
+{
+  return [[self window] convertRectToScreen: [self convertRect: [self bounds] toView: nil]];
+}
+
+- (NSUInteger) characterIndexForPoint: (NSPoint) point
+{
+  return NSNotFound;
 }
 
 - (void) flagsChanged: (NSEvent*) pEvent

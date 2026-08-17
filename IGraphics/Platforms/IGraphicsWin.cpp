@@ -574,6 +574,51 @@ LRESULT CALLBACK IGraphicsWin::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARA
     }
     case WM_GETDLGCODE:
       return DLGC_WANTALLKEYS;
+    // Texto já composto pelo TranslateMessage: é o único ponto por onde tecla morta, IME e
+    // AltGr chegam prontos. ToAscii() no WM_KEYDOWN devolve -1 para tecla morta (e ainda suja o
+    // estado do teclado para a tecla seguinte), e trunca o resto num único byte ANSI, que o
+    // ITextEntryControl leria como UTF-8 malformado.
+    case WM_CHAR:
+    {
+      if (!pGraphics->IsInGraphicsTextEntry())
+        break;
+
+      const wchar_t unit = static_cast<wchar_t>(wParam);
+
+      // Controles (backspace, tab, enter, esc) continuam pelo WM_KEYDOWN.
+      if (unit < 0x20 || unit == 0x7F)
+        return 0;
+
+      // Pares substitutos chegam em dois WM_CHAR consecutivos: o primeiro fica retido até o
+      // segundo. Por thread, pois é onde a fila de mensagens é serializada.
+      static thread_local wchar_t sHighSurrogate = 0;
+      wchar_t utf16[3] = { 0, 0, 0 };
+
+      if (unit >= 0xD800 && unit <= 0xDBFF)
+      {
+        sHighSurrogate = unit;
+        return 0;
+      }
+      if (unit >= 0xDC00 && unit <= 0xDFFF)
+      {
+        if (sHighSurrogate == 0)
+          return 0;
+        utf16[0] = sHighSurrogate;
+        utf16[1] = unit;
+        sHighSurrogate = 0;
+      }
+      else
+      {
+        sHighSurrogate = 0;
+        utf16[0] = unit;
+      }
+
+      char utf8[8] = {};
+      if (WideCharToMultiByte(CP_UTF8, 0, utf16, -1, utf8, sizeof(utf8), nullptr, nullptr) > 0)
+        pGraphics->OnTextInput(utf8);
+
+      return 0;
+    }
     case WM_KEYDOWN:
     case WM_KEYUP:
     {
@@ -581,12 +626,20 @@ LRESULT CALLBACK IGraphicsWin::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARA
       GetCursorPos(&p);
       ScreenToClient(hWnd, &p);
 
-      BYTE keyboardState[256] = {};
-      GetKeyboardState(keyboardState);
-      const int keyboardScanCode = (lParam >> 16) & 0x00ff;
+      // Com o editor ativo o caractere vem pelo WM_CHAR; aqui só interessam as teclas virtuais
+      // (setas, backspace, enter, tab, atalhos), então ToAscii() é evitado — ele consome a tecla
+      // morta e ela nunca chegaria composta ao WM_CHAR.
+      const bool inTextEntry = pGraphics && pGraphics->IsInGraphicsTextEntry();
+
       WORD character = 0;
-      const int len = ToAscii(wParam, keyboardScanCode, keyboardState, &character, 0);
-      // TODO: should get unicode?
+      int len = 0;
+      if (!inTextEntry)
+      {
+        BYTE keyboardState[256] = {};
+        GetKeyboardState(keyboardState);
+        const int keyboardScanCode = (lParam >> 16) & 0x00ff;
+        len = ToAscii(wParam, keyboardScanCode, keyboardState, &character, 0);
+      }
       bool handle = false;
 
       // send when len is 0 because wParam might be something like VK_LEFT or VK_HOME, etc.
@@ -595,7 +648,7 @@ LRESULT CALLBACK IGraphicsWin::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARA
         char str[2];
         str[0] = static_cast<char>(character);
         str[1] = '\0';
-          
+
         IKeyPress keyPress{ str, static_cast<int>(wParam),
                             static_cast<bool>(GetKeyState(VK_SHIFT) & 0x8000),
                             static_cast<bool>(GetKeyState(VK_CONTROL) & 0x8000),
