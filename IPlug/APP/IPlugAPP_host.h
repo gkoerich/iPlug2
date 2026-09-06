@@ -219,6 +219,9 @@ public:
   static WDL_DLGRET MainDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
   IPlugAPP* GetPlug() { return mIPlug.get(); }
+
+  /** @return The name of the audio input device currently selected in the app's own preferences. */
+  const char* GetAudioInputDeviceName() const { return mState.mAudioInDev.Get(); }
 private:
   std::unique_ptr<IPlugAPP> mIPlug = nullptr;
   std::unique_ptr<RtAudio> mDAC = nullptr;
