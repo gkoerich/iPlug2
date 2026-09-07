@@ -1438,6 +1438,15 @@ public:
   /** @return The number of controls that have been added to this graphics context */
   int NControls() const { return mControls.GetSize(); }
 
+  /** Move an already-attached control to the end of the draw list, so it paints and hit-tests above
+   * every other control. Ownership is unchanged, and the control is not re-attached (no OnAttached).
+   * Attachment order is otherwise the only way to express z-order, which leaves no way to raise a
+   * control that has to cover its own siblings while it is open (a dropdown list, say).
+   * Must not be called while a mouse event is being dispatched — the cached mouse-over index refers
+   * to a position in this list. Defer it to the next idle tick instead.
+   * @param pControl The attached control to raise; a control that is absent or already last is a no-op. */
+  void BringControlToFront(IControl* pControl);
+
   /** Remove controls from the control list with a particular tag.  */
   void RemoveControlWithTag(int ctrlTag);
   

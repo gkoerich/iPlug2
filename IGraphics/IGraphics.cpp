@@ -315,6 +315,19 @@ IControl* IGraphics::AttachControl(IControl* pControl, int ctrlTag, const char* 
   return pControl;
 }
 
+void IGraphics::BringControlToFront(IControl* pControl)
+{
+  const int idx = mControls.Find(pControl);
+
+  if (idx < 0 || idx == mControls.GetSize() - 1)
+    return;
+
+  mControls.Delete(idx, false); // the list keeps ownership; the control is re-added below
+  mControls.Add(pControl);
+  ClearMouseOver(); // the cached index addressed the old position
+  SetAllControlsDirty();
+}
+
 void IGraphics::AttachCornerResizer(EUIResizerMode sizeMode, bool layoutOnResize, const IColor& color, const IColor& mouseOverColor, const IColor& dragColor, float size)
 {
   AttachCornerResizer(new ICornerResizerControl(GetBounds(), size, color, mouseOverColor, dragColor), sizeMode, layoutOnResize);
