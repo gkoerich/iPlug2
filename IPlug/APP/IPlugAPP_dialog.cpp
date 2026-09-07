@@ -37,19 +37,7 @@ void IPlugAPPHost::PopulateSampleRateList(HWND hwndDlg, RtAudio::DeviceInfo* inp
 
   SendDlgItemMessage(hwndDlg,IDC_COMBO_AUDIO_SR,CB_RESETCONTENT,0,0);
 
-  std::vector<int> matchedSRs;
-
-  if (inputDevInfo->probed && outputDevInfo->probed)
-  {
-    for (int i=0; i<inputDevInfo->sampleRates.size(); i++)
-    {
-      for (int j=0; j<outputDevInfo->sampleRates.size(); j++)
-      {
-        if(inputDevInfo->sampleRates[i] == outputDevInfo->sampleRates[j])
-          matchedSRs.push_back(inputDevInfo->sampleRates[i]);
-      }
-    }
-  }
+  const std::vector<uint32_t> matchedSRs = IntersectSampleRates(*inputDevInfo, *outputDevInfo);
 
   for (int k=0; k<matchedSRs.size(); k++)
   {
@@ -298,6 +286,16 @@ void IPlugAPPHost::PopulatePreferencesDialog(HWND hwndDlg)
 #else
   #error NOT IMPLEMENTED
 #endif
+
+// Same body as MainDlgProc's ID_PREFERENCES case, callable directly (the calibration wizard's
+// "Config…" button target) without going through the app's own menu/system-menu command routing.
+void IPlugAPPHost::OpenPreferencesDialog()
+{
+  const INT_PTR ret = DialogBox(gHINSTANCE, MAKEINTRESOURCE(IDD_DIALOG_PREF), gHWND, IPlugAPPHost::PreferencesDlgProc);
+
+  if (ret == IDOK)
+    UpdateINI();
+}
 
 WDL_DLGRET IPlugAPPHost::PreferencesDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {

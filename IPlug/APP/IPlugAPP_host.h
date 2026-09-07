@@ -222,7 +222,44 @@ public:
 
   /** @return The name of the audio input device currently selected in the app's own preferences. */
   const char* GetAudioInputDeviceName() const { return mState.mAudioInDev.Get(); }
+
+  // ── Public read-only audio-settings facade (additive, opt-in: NAMApp never calls these) ──
+
+  /** @return The audio driver type names this platform offers, in AppState::mAudioDriverType index order
+   * (e.g. ["CoreAudio"] on macOS, ["DirectSound", "ASIO"] on Windows). */
+  std::vector<std::string> GetAudioDriverTypeNames() const;
+  /** @return The probed audio input device names, in the same order/indexing GetAudioDeviceIdx() expects. */
+  std::vector<std::string> GetAudioInputDeviceNames() const;
+  /** @return The probed audio output device names, in the same order/indexing GetAudioDeviceIdx() expects. */
+  std::vector<std::string> GetAudioOutputDeviceNames() const;
+  /** @return The sample rates both the currently selected input and output device support, ascending. */
+  std::vector<uint32_t> GetMatchedSampleRates() const;
+  /** @return The channel count of the currently selected input device (0 if none is selected/probed). */
+  int GetInputChannelCount() const;
+  /** @return The channel count of the currently selected output device (0 if none is selected/probed). */
+  int GetOutputChannelCount() const;
+  /** @return The fixed buffer size options this app offers, matching kBufferSizeOptions. */
+  static std::vector<std::string> GetBufferSizeOptions();
+
+  /** @return A copy of the currently active audio/MIDI settings. */
+  AppState GetAudioState() const { return mState; }
+
+  /** Applies `desired` as the new state: changes the driver type first if it differs, then
+   * (re)opens the audio stream with the new settings. On failure, `mState` is restored to what it
+   * was before the call and the previous stream is reopened, so the caller's UI can revert its
+   * selection to match reality.
+   * @return true on success (mState == desired, stream running, INI updated); false if the desired
+   * settings failed to apply, in which case the previous state is active again. */
+  bool TryApplyAudioState(const AppState& desired);
+
+  /** Opens the app's own native audio/MIDI preferences dialog (the "Config…" button target), the
+   * same modal ID_PREFERENCES already opens from the main window's menu. Writes the INI on OK. */
+  void OpenPreferencesDialog();
+
 private:
+  static std::vector<uint32_t> IntersectSampleRates(const RtAudio::DeviceInfo& inputDevInfo,
+                                                     const RtAudio::DeviceInfo& outputDevInfo);
+
   std::unique_ptr<IPlugAPP> mIPlug = nullptr;
   std::unique_ptr<RtAudio> mDAC = nullptr;
   std::unique_ptr<RtMidiIn> mMidiIn = nullptr;

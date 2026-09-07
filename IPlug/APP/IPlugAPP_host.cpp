@@ -228,6 +228,96 @@ int IPlugAPPHost::GetAudioDeviceIdx(const char* deviceNameToTest) const
   return -1;
 }
 
+std::vector<uint32_t> IPlugAPPHost::IntersectSampleRates(const RtAudio::DeviceInfo& inputDevInfo,
+                                                         const RtAudio::DeviceInfo& outputDevInfo)
+{
+  std::vector<uint32_t> matched;
+
+  if (inputDevInfo.probed && outputDevInfo.probed)
+  {
+    for (size_t i = 0; i < inputDevInfo.sampleRates.size(); i++)
+    {
+      for (size_t j = 0; j < outputDevInfo.sampleRates.size(); j++)
+      {
+        if (inputDevInfo.sampleRates[i] == outputDevInfo.sampleRates[j])
+          matched.push_back(inputDevInfo.sampleRates[i]);
+      }
+    }
+  }
+
+  return matched;
+}
+
+std::vector<std::string> IPlugAPPHost::GetAudioDriverTypeNames() const
+{
+#if defined OS_WIN
+  return {"DirectSound", "ASIO"};
+#elif defined OS_MAC
+  return {"CoreAudio"};
+#else
+  #error NOT IMPLEMENTED
+#endif
+}
+
+std::vector<std::string> IPlugAPPHost::GetAudioInputDeviceNames() const
+{
+  std::vector<std::string> names;
+  names.reserve(mAudioInputDevs.size());
+  for (uint32_t idx : mAudioInputDevs)
+    names.push_back(GetAudioDeviceName(idx));
+  return names;
+}
+
+std::vector<std::string> IPlugAPPHost::GetAudioOutputDeviceNames() const
+{
+  std::vector<std::string> names;
+  names.reserve(mAudioOutputDevs.size());
+  for (uint32_t idx : mAudioOutputDevs)
+    names.push_back(GetAudioDeviceName(idx));
+  return names;
+}
+
+std::vector<uint32_t> IPlugAPPHost::GetMatchedSampleRates() const
+{
+  if (!mDAC)
+    return {};
+
+  const int inputIdx = GetAudioDeviceIdx(mState.mAudioInDev.Get());
+  const int outputIdx = GetAudioDeviceIdx(mState.mAudioOutDev.Get());
+  if (inputIdx < 0 || outputIdx < 0)
+    return {};
+
+  const RtAudio::DeviceInfo inputInfo = mDAC->getDeviceInfo(inputIdx);
+  const RtAudio::DeviceInfo outputInfo = mDAC->getDeviceInfo(outputIdx);
+  return IntersectSampleRates(inputInfo, outputInfo);
+}
+
+int IPlugAPPHost::GetInputChannelCount() const
+{
+  if (!mDAC)
+    return 0;
+  const int idx = GetAudioDeviceIdx(mState.mAudioInDev.Get());
+  if (idx < 0)
+    return 0;
+  return static_cast<int>(mDAC->getDeviceInfo(idx).inputChannels);
+}
+
+int IPlugAPPHost::GetOutputChannelCount() const
+{
+  if (!mDAC)
+    return 0;
+  const int idx = GetAudioDeviceIdx(mState.mAudioOutDev.Get());
+  if (idx < 0)
+    return 0;
+  return static_cast<int>(mDAC->getDeviceInfo(idx).outputChannels);
+}
+
+// static
+std::vector<std::string> IPlugAPPHost::GetBufferSizeOptions()
+{
+  return std::vector<std::string>(kBufferSizeOptions, kBufferSizeOptions + kNumBufferSizeOptions);
+}
+
 int IPlugAPPHost::GetMIDIPortNumber(ERoute direction, const char* nameToTest) const
 {
   int start = 1;
@@ -468,6 +558,32 @@ bool IPlugAPPHost::TryToChangeAudio()
     return InitAudio(inputID, outputID, mState.mAudioSR, mState.mBufferSize);
   }
 
+  return false;
+}
+
+bool IPlugAPPHost::TryApplyAudioState(const AppState& desired)
+{
+  const AppState previous = mState;
+  const bool driverTypeChanges = (previous.mAudioDriverType != desired.mAudioDriverType);
+
+  mState = desired;
+
+  bool ok = !driverTypeChanges || TryToChangeAudioDriverType();
+  if (ok)
+    ok = TryToChangeAudio();
+
+  if (ok)
+  {
+    UpdateINI();
+    return true;
+  }
+
+  // Revert: the caller's UI has already applied `desired` to its own controls, so it needs the
+  // previous state back to know what is actually running again.
+  mState = previous;
+  if (driverTypeChanges)
+    TryToChangeAudioDriverType();
+  TryToChangeAudio();
   return false;
 }
 
