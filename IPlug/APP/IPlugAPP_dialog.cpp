@@ -63,21 +63,35 @@ void IPlugAPPHost::PopulateAudioInputList(HWND hwndDlg, RtAudio::DeviceInfo* inf
   SendDlgItemMessage(hwndDlg,IDC_COMBO_AUDIO_IN_L,CB_RESETCONTENT,0,0);
   SendDlgItemMessage(hwndDlg,IDC_COMBO_AUDIO_IN_R,CB_RESETCONTENT,0,0);
 
-  int i;
+  // The stream opens MaxNChannels(kInput) consecutive channels from the one picked in IN_L, so that
+  // is how many starting points exist. Hardcoding a stereo pair here left the last valid channel
+  // out of the list, and CB_SETCURSEL then had no item to select for it — the combo drew blank.
+  const int nInputs = GetPlug() ? GetPlug()->MaxNChannels(ERoute::kInput) : 2;
+  const int nStarts = info->inputChannels - nInputs + 1;
 
-  for (i=0; i<info->inputChannels -1; i++)
+  for (int i = 0; i < nStarts; i++)
   {
     buf.SetFormatted(20, "%i", i+1);
     SendDlgItemMessage(hwndDlg,IDC_COMBO_AUDIO_IN_L,CB_ADDSTRING,0,(LPARAM)buf.Get());
-    SendDlgItemMessage(hwndDlg,IDC_COMBO_AUDIO_IN_R,CB_ADDSTRING,0,(LPARAM)buf.Get());
   }
 
-  // TEMP
-  buf.SetFormatted(20, "%i", i+1);
-  SendDlgItemMessage(hwndDlg,IDC_COMBO_AUDIO_IN_R,CB_ADDSTRING,0,(LPARAM)buf.Get());
+  // A mono-input plugin never opens a second input channel, so IN_R would name one that does not
+  // exist: it stays empty and disabled rather than showing a channel nothing reads.
+  const bool hasRightInput = nInputs >= 2;
+  EnableWindow(GetDlgItem(hwndDlg, IDC_COMBO_AUDIO_IN_R), hasRightInput);
+
+  if (hasRightInput)
+  {
+    for (int i = 0; i < info->inputChannels; i++)
+    {
+      buf.SetFormatted(20, "%i", i+1);
+      SendDlgItemMessage(hwndDlg,IDC_COMBO_AUDIO_IN_R,CB_ADDSTRING,0,(LPARAM)buf.Get());
+    }
+  }
 
   SendDlgItemMessage(hwndDlg,IDC_COMBO_AUDIO_IN_L,CB_SETCURSEL, mState.mAudioInChanL - 1, 0);
-  SendDlgItemMessage(hwndDlg,IDC_COMBO_AUDIO_IN_R,CB_SETCURSEL, mState.mAudioInChanR - 1, 0);
+  if (hasRightInput)
+    SendDlgItemMessage(hwndDlg,IDC_COMBO_AUDIO_IN_R,CB_SETCURSEL, mState.mAudioInChanR - 1, 0);
 }
 
 void IPlugAPPHost::PopulateAudioOutputList(HWND hwndDlg, RtAudio::DeviceInfo* info)
@@ -90,21 +104,34 @@ void IPlugAPPHost::PopulateAudioOutputList(HWND hwndDlg, RtAudio::DeviceInfo* in
   SendDlgItemMessage(hwndDlg,IDC_COMBO_AUDIO_OUT_L,CB_RESETCONTENT,0,0);
   SendDlgItemMessage(hwndDlg,IDC_COMBO_AUDIO_OUT_R,CB_RESETCONTENT,0,0);
 
-  int i;
+  // Same starting-point count as the input list above, over MaxNChannels(kOutput).
+  const int nOutputs = GetPlug() ? GetPlug()->MaxNChannels(ERoute::kOutput) : 2;
+  const int nStarts = info->outputChannels - nOutputs + 1;
 
-  for (i=0; i<info->outputChannels -1; i++)
+  for (int i = 0; i < nStarts; i++)
   {
     buf.SetFormatted(20, "%i", i+1);
     SendDlgItemMessage(hwndDlg,IDC_COMBO_AUDIO_OUT_L,CB_ADDSTRING,0,(LPARAM)buf.Get());
-    SendDlgItemMessage(hwndDlg,IDC_COMBO_AUDIO_OUT_R,CB_ADDSTRING,0,(LPARAM)buf.Get());
   }
 
-  // TEMP
-  buf.SetFormatted(20, "%i", i+1);
-  SendDlgItemMessage(hwndDlg,IDC_COMBO_AUDIO_OUT_R,CB_ADDSTRING,0,(LPARAM)buf.Get());
+  // OUT_R is derived, not chosen: the OUT_L handler below overwrites it with L + 1, and the audio
+  // callback reads only OUT_L (it writes each output into the contiguous window opened from it).
+  // Editable, it would invite a routing the stream never performs.
+  const bool hasRightOutput = nOutputs >= 2;
+  EnableWindow(GetDlgItem(hwndDlg, IDC_COMBO_AUDIO_OUT_R), false);
+
+  if (hasRightOutput)
+  {
+    for (int i = 0; i < info->outputChannels; i++)
+    {
+      buf.SetFormatted(20, "%i", i+1);
+      SendDlgItemMessage(hwndDlg,IDC_COMBO_AUDIO_OUT_R,CB_ADDSTRING,0,(LPARAM)buf.Get());
+    }
+  }
 
   SendDlgItemMessage(hwndDlg,IDC_COMBO_AUDIO_OUT_L,CB_SETCURSEL, mState.mAudioOutChanL - 1, 0);
-  SendDlgItemMessage(hwndDlg,IDC_COMBO_AUDIO_OUT_R,CB_SETCURSEL, mState.mAudioOutChanR - 1, 0);
+  if (hasRightOutput)
+    SendDlgItemMessage(hwndDlg,IDC_COMBO_AUDIO_OUT_R,CB_SETCURSEL, mState.mAudioOutChanR - 1, 0);
 }
 
 // This has to get called after any change to audio driver/in dev/out dev
