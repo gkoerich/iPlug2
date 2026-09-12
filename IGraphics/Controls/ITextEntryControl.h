@@ -68,6 +68,8 @@ public:
    * a key-down handler as a plain character. Obeys SetMaxCodePoints(). */
   void InsertUTF8(const char* str);
 
+  void OnMouseWheel(float x, float y, const IMouseMod& mod, float d) override;
+
   void SetPasswordMode(bool isPassword);
   void SetTabCommitCallback(std::function<void(IControl*)> cb) { mOnTabCommit = std::move(cb); }
   void SetMaxCodePoints(int max) { mMaxCodePoints = max; }
@@ -76,6 +78,12 @@ public:
   // of waiting for the commit. Also fires once on a dismissed (cancelled) edit, with the string
   // the entry started from, so the last live value never outlives the edit that produced it.
   void SetChangeCallback(std::function<void(const char*)> cb) { mOnChange = std::move(cb); }
+
+  // While an edit is in progress IGraphics routes every mouse event here regardless of where the
+  // cursor is (GetMouseControl), so a list opened alongside the field receives no wheel of its own.
+  // Opt-in per edit session and reset on every CreateTextEntry(): without a callback the wheel stays
+  // inert, as it was, rather than reaching whatever sits under the cursor.
+  void SetWheelCallback(std::function<void(float, float, float)> cb) { mOnWheel = std::move(cb); }
 
   /** Wrap the edited text over multiple rows at the control's width, instead of the single row
    * this control is otherwise limited to. Opt-in per edit session and reset on every
@@ -120,6 +128,7 @@ private:
   std::string mInitialStr; // buffer at CreateTextEntry, replayed to mOnChange on a dismissed edit
   std::function<void(IControl*)> mOnTabCommit;
   std::function<void(const char*)> mOnChange;
+  std::function<void(float, float, float)> mOnWheel;
 };
 
 END_IGRAPHICS_NAMESPACE

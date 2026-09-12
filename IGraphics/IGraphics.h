@@ -1134,6 +1134,12 @@ public:
    * and once with the pre-edit contents if the edit is dismissed. Cleared on every CreateTextEntry(). */
   void SetTextEntryChangeCallback(std::function<void(const char*)> cb);
 
+  /** Set a callback invoked when the wheel turns while a text entry is active, with the cursor
+   * position and delta. IGraphics routes every mouse event to the entry while it is editing, so a
+   * list opened alongside the field would otherwise never scroll. Cleared on every CreateTextEntry();
+   * without one the wheel stays inert during an edit, as before. */
+  void SetTextEntryWheelCallback(std::function<void(float x, float y, float d)> cb);
+
   /** Word-wrap the active text entry over multiple rows at its own width.
    * Reset to off on every CreateTextEntry().
    * @param wrap Whether to word-wrap

@@ -758,6 +758,7 @@ void ITextEntryControl::CreateTextEntry(int paramIdx, const IText& text, const I
   mIsPassword = false;
   mOnTabCommit = {};
   mOnChange = {}; // set after this returns, so the SetStr below never fires it
+  mOnWheel = {};
   mMaxCodePoints = 0;
   mWordWrap = false;
   mLineHeight = 0.f;
@@ -771,6 +772,14 @@ void ITextEntryControl::CreateTextEntry(int paramIdx, const IText& text, const I
   OnTextChange();
   SetDirty(true);
   mEditing = true;
+}
+
+void ITextEntryControl::OnMouseWheel(float x, float y, const IMouseMod& mod, float d)
+{
+  if (mOnWheel)
+    mOnWheel(x, y, d);
+  else
+    IControl::OnMouseWheel(x, y, mod, d);
 }
 
 void ITextEntryControl::SetPasswordMode(bool isPassword)

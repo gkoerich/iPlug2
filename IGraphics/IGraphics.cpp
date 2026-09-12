@@ -416,6 +416,12 @@ void IGraphics::SetTextEntryChangeCallback(std::function<void(const char*)> cb)
     mTextEntryControl->SetChangeCallback(std::move(cb));
 }
 
+void IGraphics::SetTextEntryWheelCallback(std::function<void(float, float, float)> cb)
+{
+  if (mTextEntryControl)
+    mTextEntryControl->SetWheelCallback(std::move(cb));
+}
+
 void IGraphics::SetTextEntryWordWrap(bool wrap, float lineHeight)
 {
   if (mTextEntryControl)
