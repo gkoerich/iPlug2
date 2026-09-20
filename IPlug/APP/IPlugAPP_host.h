@@ -192,6 +192,11 @@ public:
   * @param name The name of the audio device to test
   * @return The integer index RTAudio has given the audio device */
   int GetAudioDeviceIdx(const char* name) const;
+
+  /** @param idx An audio device index, typically from GetAudioDeviceIdx()
+   * @return Whether idx addresses a device of the CURRENT API. Indices cached before an API
+   * change do not, and RtAudio::getDeviceInfo() throws on them. */
+  bool IsValidDeviceIdx(int idx) const;
   
   /** @param direction Either kInput or kOutput
    * @param name The name of the midi device
@@ -220,7 +225,9 @@ public:
 
   IPlugAPP* GetPlug() { return mIPlug.get(); }
 
-  /** @return The name of the audio input device currently selected in the app's own preferences. */
+  /** @return The raw mAudioInDev entry of the app's own preferences, which under ASIO is not the
+   * device recording -- callers that mean "which interface is the input coming from" want
+   * GetEffectiveAudioInputDeviceName(). */
   const char* GetAudioInputDeviceName() const { return mState.mAudioInDev.Get(); }
 
   // ── Public read-only audio-settings facade (additive, opt-in: NAMApp never calls these) ──
@@ -232,8 +239,18 @@ public:
   std::vector<std::string> GetAudioInputDeviceNames() const;
   /** @return The probed audio output device names, in the same order/indexing GetAudioDeviceIdx() expects. */
   std::vector<std::string> GetAudioOutputDeviceNames() const;
+  /** @return The device the input stream actually opens on. A Windows ASIO driver serves both
+   * directions from one device, which the host keeps in mAudioOutDev alone -- mAudioInDev stays
+   * whatever the last non-ASIO driver left there (the preferences dialog disables its combo), so
+   * reading it under ASIO names a device that is not the one recording. */
+  std::string GetEffectiveAudioInputDeviceName() const;
   /** @return The sample rates both the currently selected input and output device support, ascending. */
   std::vector<uint32_t> GetMatchedSampleRates() const;
+  /** Same, for a pair a caller is about to apply rather than the one currently selected. */
+  std::vector<uint32_t> GetMatchedSampleRatesFor(const char* inputDeviceName, const char* outputDeviceName) const;
+  /** @return `desired` when the device pair offers it, otherwise the rate to open instead. A stream
+   * opened at an unsupported rate simply fails, so this is what a device change snaps to. */
+  static uint32_t PickSupportedSampleRate(uint32_t desired, const std::vector<uint32_t>& supported);
   /** @return The channel count of the currently selected input device (0 if none is selected/probed). */
   int GetInputChannelCount() const;
   /** @return The channel count of the currently selected output device (0 if none is selected/probed). */

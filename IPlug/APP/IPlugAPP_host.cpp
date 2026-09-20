@@ -11,6 +11,8 @@
 #include "IPlugAPP_host.h"
 #include "resource.h"
 
+#include <algorithm>
+
 #ifdef OS_WIN
 #include <sys/stat.h>
 #endif
@@ -277,14 +279,35 @@ std::vector<std::string> IPlugAPPHost::GetAudioOutputDeviceNames() const
   return names;
 }
 
+bool IPlugAPPHost::IsValidDeviceIdx(int idx) const
+{
+  return mDAC && idx >= 0 && static_cast<uint32_t>(idx) < mDAC->getDeviceCount();
+}
+
+std::string IPlugAPPHost::GetEffectiveAudioInputDeviceName() const
+{
+#if defined OS_WIN
+  // The same device TryToChangeAudio() opens the input stream on under ASIO.
+  if (mState.mAudioDriverType == kDeviceASIO)
+    return mState.mAudioOutDev.Get();
+#endif
+  return mState.mAudioInDev.Get();
+}
+
 std::vector<uint32_t> IPlugAPPHost::GetMatchedSampleRates() const
+{
+  return GetMatchedSampleRatesFor(GetEffectiveAudioInputDeviceName().c_str(), mState.mAudioOutDev.Get());
+}
+
+std::vector<uint32_t> IPlugAPPHost::GetMatchedSampleRatesFor(const char* inputDeviceName,
+                                                             const char* outputDeviceName) const
 {
   if (!mDAC)
     return {};
 
-  const int inputIdx = GetAudioDeviceIdx(mState.mAudioInDev.Get());
-  const int outputIdx = GetAudioDeviceIdx(mState.mAudioOutDev.Get());
-  if (inputIdx < 0 || outputIdx < 0)
+  const int inputIdx = GetAudioDeviceIdx(inputDeviceName);
+  const int outputIdx = GetAudioDeviceIdx(outputDeviceName);
+  if (!IsValidDeviceIdx(inputIdx) || !IsValidDeviceIdx(outputIdx))
     return {};
 
   const RtAudio::DeviceInfo inputInfo = mDAC->getDeviceInfo(inputIdx);
@@ -292,12 +315,25 @@ std::vector<uint32_t> IPlugAPPHost::GetMatchedSampleRates() const
   return IntersectSampleRates(inputInfo, outputInfo);
 }
 
+// static
+uint32_t IPlugAPPHost::PickSupportedSampleRate(uint32_t desired, const std::vector<uint32_t>& supported)
+{
+  auto offers = [&supported](uint32_t rate) {
+    return std::find(supported.begin(), supported.end(), rate) != supported.end();
+  };
+
+  if (supported.empty() || offers(desired))
+    return desired;
+
+  return offers(48000) ? 48000 : (offers(44100) ? 44100 : supported.front());
+}
+
 int IPlugAPPHost::GetInputChannelCount() const
 {
   if (!mDAC)
     return 0;
-  const int idx = GetAudioDeviceIdx(mState.mAudioInDev.Get());
-  if (idx < 0)
+  const int idx = GetAudioDeviceIdx(GetEffectiveAudioInputDeviceName().c_str());
+  if (!IsValidDeviceIdx(idx))
     return 0;
   return static_cast<int>(mDAC->getDeviceInfo(idx).inputChannels);
 }
@@ -307,7 +343,7 @@ int IPlugAPPHost::GetOutputChannelCount() const
   if (!mDAC)
     return 0;
   const int idx = GetAudioDeviceIdx(mState.mAudioOutDev.Get());
-  if (idx < 0)
+  if (!IsValidDeviceIdx(idx))
     return 0;
   return static_cast<int>(mDAC->getDeviceInfo(idx).outputChannels);
 }
@@ -365,6 +401,11 @@ void IPlugAPPHost::ProbeAudioIO()
   mAudioInputDevs.clear();
   mAudioOutputDevs.clear();
   mAudioIDDevNames.clear();
+
+  // These index into the list being rebuilt below. Keeping a previous API's value here would point
+  // at an unrelated device -- possibly a capture one, which RtAudio then refuses to open as output.
+  mDefaultInputDev = -1;
+  mDefaultOutputDev = -1;
 
   uint32_t nDevices = mDAC->getDeviceCount();
 
@@ -551,10 +592,19 @@ bool IPlugAPPHost::TryToChangeAudio()
   }
 
   if (failedToFindDevice)
-    MessageBox(gHWND, "Please check your soundcard settings in Preferences", "Error", MB_OK);
+    DBGMSG("no usable audio device for the current driver\n");
 
   if (inputID != -1 && outputID != -1)
   {
+    // An interface that does not offer the stored rate -- a 48kHz-only one against the 44.1kHz
+    // default, say -- would only fail to open, leaving the app silent with nothing on screen
+    // saying why.
+    if (IsValidDeviceIdx(inputID) && IsValidDeviceIdx(outputID))
+    {
+      mState.mAudioSR = PickSupportedSampleRate(
+        mState.mAudioSR, IntersectSampleRates(mDAC->getDeviceInfo(inputID), mDAC->getDeviceInfo(outputID)));
+    }
+
     return InitAudio(inputID, outputID, mState.mAudioSR, mState.mBufferSize);
   }
 
@@ -569,6 +619,18 @@ bool IPlugAPPHost::TryApplyAudioState(const AppState& desired)
   mState = desired;
 
   bool ok = !driverTypeChanges || TryToChangeAudioDriverType();
+
+  if (ok && driverTypeChanges)
+  {
+    // A new API enumerates its own devices: every cached index from the previous one is stale, and
+    // a device name carries no meaning across APIs. Leave the audio closed and let the caller pick
+    // from the new list -- falling back to a default here would silently pick for them, and
+    // reverting would make an API with no usable device impossible to select at all.
+    ProbeAudioIO();
+    UpdateINI();
+    return true;
+  }
+
   if (ok)
     ok = TryToChangeAudio();
 
@@ -582,7 +644,10 @@ bool IPlugAPPHost::TryApplyAudioState(const AppState& desired)
   // previous state back to know what is actually running again.
   mState = previous;
   if (driverTypeChanges)
+  {
     TryToChangeAudioDriverType();
+    ProbeAudioIO();
+  }
   TryToChangeAudio();
   return false;
 }
