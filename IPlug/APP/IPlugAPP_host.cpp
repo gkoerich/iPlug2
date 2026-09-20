@@ -9,6 +9,7 @@
 */
 
 #include "IPlugAPP_host.h"
+#include "IPlugAPPAudioRules.h"
 #include "resource.h"
 
 #include <algorithm>
@@ -288,10 +289,11 @@ std::string IPlugAPPHost::GetEffectiveAudioInputDeviceName() const
 {
 #if defined OS_WIN
   // The same device TryToChangeAudio() opens the input stream on under ASIO.
-  if (mState.mAudioDriverType == kDeviceASIO)
-    return mState.mAudioOutDev.Get();
+  const bool driverIsAsio = mState.mAudioDriverType == kDeviceASIO;
+#else
+  const bool driverIsAsio = false;
 #endif
-  return mState.mAudioInDev.Get();
+  return EffectiveInputDeviceName(driverIsAsio, mState.mAudioInDev.Get(), mState.mAudioOutDev.Get());
 }
 
 std::vector<uint32_t> IPlugAPPHost::GetMatchedSampleRates() const
@@ -318,14 +320,7 @@ std::vector<uint32_t> IPlugAPPHost::GetMatchedSampleRatesFor(const char* inputDe
 // static
 uint32_t IPlugAPPHost::PickSupportedSampleRate(uint32_t desired, const std::vector<uint32_t>& supported)
 {
-  auto offers = [&supported](uint32_t rate) {
-    return std::find(supported.begin(), supported.end(), rate) != supported.end();
-  };
-
-  if (supported.empty() || offers(desired))
-    return desired;
-
-  return offers(48000) ? 48000 : (offers(44100) ? 44100 : supported.front());
+  return iplug::PickSupportedSampleRate(desired, supported);
 }
 
 int IPlugAPPHost::GetInputChannelCount() const
