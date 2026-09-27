@@ -254,7 +254,7 @@ std::vector<uint32_t> IPlugAPPHost::IntersectSampleRates(const RtAudio::DeviceIn
 std::vector<std::string> IPlugAPPHost::GetAudioDriverTypeNames() const
 {
 #if defined OS_WIN
-  return {"DirectSound", "ASIO"};
+  return {"Windows Audio", "ASIO"};
 #elif defined OS_MAC
   return {"CoreAudio"};
 #else
@@ -514,7 +514,7 @@ bool IPlugAPPHost::TryToChangeAudioDriverType()
   if(mState.mAudioDriverType == kDeviceASIO)
     mDAC = std::make_unique<RtAudio>(RtAudio::WINDOWS_ASIO);
   else
-    mDAC = std::make_unique<RtAudio>(RtAudio::WINDOWS_DS);
+    mDAC = std::make_unique<RtAudio>(RtAudio::WINDOWS_WASAPI);
 #elif defined OS_MAC
   if(mState.mAudioDriverType == kDeviceCoreAudio)
     mDAC = std::make_unique<RtAudio>(RtAudio::MACOSX_CORE);

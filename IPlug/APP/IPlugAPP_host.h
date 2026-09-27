@@ -71,7 +71,7 @@ BEGIN_IPLUG_NAMESPACE
 
 const int kNumBufferSizeOptions = 11;
 const std::string kBufferSizeOptions[kNumBufferSizeOptions] = {"32", "64", "96", "128", "192", "256", "512", "1024", "2048", "4096", "8192" };
-const int kDeviceDS = 0; const int kDeviceCoreAudio = 0; const int kDeviceAlsa = 0;
+const int kDeviceWASAPI = 0; const int kDeviceCoreAudio = 0; const int kDeviceAlsa = 0;
 const int kDeviceASIO = 1; const int kDeviceJack = 1;
 extern UINT gSCROLLMSG;
 
@@ -106,7 +106,7 @@ public:
     , mAudioOutDev(DEFAULT_OUTPUT_DEV)
     , mMidiInDev(OFF_TEXT)
     , mMidiOutDev(OFF_TEXT)
-    , mAudioDriverType(0) // DirectSound / CoreAudio by default
+    , mAudioDriverType(0) // Windows Audio (WASAPI) / CoreAudio by default
     , mBufferSize(512)
     , mAudioSR(44100)
     , mMidiInChan(0)
@@ -233,7 +233,7 @@ public:
   // ── Public read-only audio-settings facade (additive, opt-in: NAMApp never calls these) ──
 
   /** @return The audio driver type names this platform offers, in AppState::mAudioDriverType index order
-   * (e.g. ["CoreAudio"] on macOS, ["DirectSound", "ASIO"] on Windows). */
+   * (e.g. ["CoreAudio"] on macOS, ["Windows Audio", "ASIO"] on Windows). */
   std::vector<std::string> GetAudioDriverTypeNames() const;
   /** @return The probed audio input device names, in the same order/indexing GetAudioDeviceIdx() expects. */
   std::vector<std::string> GetAudioInputDeviceNames() const;
@@ -268,10 +268,6 @@ public:
    * @return true on success (mState == desired, stream running, INI updated); false if the desired
    * settings failed to apply, in which case the previous state is active again. */
   bool TryApplyAudioState(const AppState& desired);
-
-  /** Opens the app's own native audio/MIDI preferences dialog (the "Config…" button target), the
-   * same modal ID_PREFERENCES already opens from the main window's menu. Writes the INI on OK. */
-  void OpenPreferencesDialog();
 
 private:
   static std::vector<uint32_t> IntersectSampleRates(const RtAudio::DeviceInfo& inputDevInfo,

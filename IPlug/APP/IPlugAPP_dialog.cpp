@@ -290,7 +290,7 @@ bool IPlugAPPHost::PopulateMidiDialogs(HWND hwndDlg)
 #ifdef OS_WIN
 void IPlugAPPHost::PopulatePreferencesDialog(HWND hwndDlg)
 {
-  SendDlgItemMessage(hwndDlg,IDC_COMBO_AUDIO_DRIVER,CB_ADDSTRING,0,(LPARAM)"DirectSound");
+  SendDlgItemMessage(hwndDlg,IDC_COMBO_AUDIO_DRIVER,CB_ADDSTRING,0,(LPARAM)"Windows Audio");
   SendDlgItemMessage(hwndDlg,IDC_COMBO_AUDIO_DRIVER,CB_ADDSTRING,0,(LPARAM)"ASIO");
   SendDlgItemMessage(hwndDlg,IDC_COMBO_AUDIO_DRIVER,CB_SETCURSEL, mState.mAudioDriverType, 0);
 
@@ -313,16 +313,6 @@ void IPlugAPPHost::PopulatePreferencesDialog(HWND hwndDlg)
 #else
   #error NOT IMPLEMENTED
 #endif
-
-// Same body as MainDlgProc's ID_PREFERENCES case, callable directly (the calibration wizard's
-// "Config…" button target) without going through the app's own menu/system-menu command routing.
-void IPlugAPPHost::OpenPreferencesDialog()
-{
-  const INT_PTR ret = DialogBox(gHINSTANCE, MAKEINTRESOURCE(IDD_DIALOG_PREF), gHWND, IPlugAPPHost::PreferencesDlgProc);
-
-  if (ret == IDOK)
-    UpdateINI();
-}
 
 WDL_DLGRET IPlugAPPHost::PreferencesDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
